@@ -1,0 +1,58 @@
+{
+  "$schema": "https://www.raycast.com/schemas/extension.json",
+  "name": "jwt-lens",
+  "title": "JWT Lens",
+  "description": "Decode Your JSON Web Tokens – extract the header and data information from a JWT",
+  "icon": "jwt.png",
+  "author": "DaBorsten",
+  "categories": [
+    "Data",
+    "Developer Tools",
+    "Web"
+  ],
+  "license": "MIT",
+  "commands": [
+    {
+      "name": "jwt-view",
+      "title": "Decode a JWT",
+      "description": "Decode and inspect the contents of a JWT",
+      "mode": "view",
+      "arguments": [
+        {
+          "name": "token",
+          "placeholder": "Paste JWT",
+          "type": "text",
+          "required": false
+        }
+      ]
+    }
+  ],
+  "dependencies": {
+    "@raycast/api": "^1.104.1",
+    "jose": "^6.2.2",
+    "raycast-hooks": "^1.0.4",
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1"
+  },
+  "devDependencies": {
+    "@raycast/eslint-config": "^2.1.1",
+    "@types/node": "25.5.2",
+    "@types/react-dom": "^19.0.0",
+    "eslint": "^9.39.4",
+    "prettier": "^3.7.4",
+    "react-devtools": "^6.1.1",
+    "typescript": "^6.0.2"
+  },
+  "scripts": {
+    "build": "ray build -e dist",
+    "dev": "ray develop",
+    "fix-lint": "ray lint --fix",
+    "lint": "ray lint",
+    "publish": "npx @raycast/api@latest publish"
+  },
+  "platforms": [
+    "macOS",
+    "Windows"
+  ],
+  "private": false
+}
