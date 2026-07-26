@@ -28,19 +28,19 @@
     }
   ],
   "dependencies": {
-    "@raycast/api": "^1.104.1",
-    "jose": "^6.2.3",
+    "@raycast/api": "^1.104.23",
+    "jose": "^6.2.4",
     "raycast-hooks": "^1.0.4",
-    "react": "^19.2.6",
-    "react-dom": "^19.2.6"
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
   },
   "devDependencies": {
-    "@raycast/eslint-config": "^2.1.1",
-    "@types/node": "25.6.2",
+    "@raycast/eslint-config": "^2.2.0",
+    "@types/node": "26.1.1",
     "@types/react-dom": "^19.2.3",
-    "eslint": "^9.39.4",
-    "prettier": "^3.8.3",
-    "react-devtools": "^7.0.1",
+    "eslint": "^10.8.0",
+    "prettier": "^3.9.6",
+    "react-devtools": "6.1.1",
     "typescript": "^6.0.3"
   },
   "scripts": {
@@ -54,5 +54,9 @@
     "macOS",
     "Windows"
   ],
-  "private": false
+  "private": false,
+  "allowScripts": {
+    "electron@23.3.13": true,
+    "esbuild@0.27.7": true
+  }
 }
