@@ -28,17 +28,17 @@
     }
   ],
   "dependencies": {
-    "@raycast/api": "^1.104.23",
-    "jose": "^6.2.4",
+    "@raycast/api": "^1.104.24",
+    "jose": "^6.2.8",
     "raycast-hooks": "^1.0.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
     "@raycast/eslint-config": "^2.2.0",
-    "@types/node": "26.1.1",
+    "@types/node": "26.2.0",
     "@types/react-dom": "^19.2.3",
-    "eslint": "^10.8.0",
+    "eslint": "^10.8.1",
     "prettier": "^3.9.6",
     "react-devtools": "6.1.1",
     "typescript": "^6.0.3"
