@@ -1,11 +1,17 @@
-import { Action, ActionPanel, Clipboard, Color, Detail, LaunchProps } from "@raycast/api";
-import { useEffect, useState } from "react";
+import { Action, ActionPanel, Clipboard, Color, Detail, Icon, LaunchProps } from "@raycast/api";
+import { useCallback, useEffect, useState } from "react";
 import * as jose from "jose";
-import { ListFromObject } from "./utils/list-from-object";
+import { additionalClaims, ListFromObject } from "./utils/list-from-object";
 import { extractJwt } from "./utils/extract-jwt";
 import { jwtLogo } from "./constants";
+import { formatDuration, formatRelative, getTimestampColor, getTokenStatus, isTimestamp } from "./utils/token-status";
+import { VerifySignatureForm } from "./components/verify-signature-form";
 
-const TIMESTAMP_CLAIMS = new Set(["iat", "exp", "nbf", "auth_time", "updated_at"]);
+const SCOPE_CLAIMS = new Set(["scope", "scp"]);
+const ALG_FAMILIES: Record<string, string> = { HS: "HMAC", RS: "RSA", PS: "RSA-PSS", ES: "ECDSA" };
+const MAX_TITLE_HINT_LENGTH = 30;
+
+type Items = ReturnType<typeof ListFromObject>;
 
 function formatTimestamp(value: number): string {
   return new Date(value * 1000).toLocaleString("en-US", {
@@ -14,26 +20,69 @@ function formatTimestamp(value: number): string {
   });
 }
 
-function MetadataSection({ title, items }: { title: string; items: ReturnType<typeof ListFromObject> }) {
+function toText(value: unknown): string {
+  return typeof value === "string" ? value : JSON.stringify(value);
+}
+
+function claimTitle(key: string): string {
+  // "Expiration time (seconds since Unix epoch)" -> "Expiration time"
+  const hint = additionalClaims[key]?.split(" (")[0];
+  return hint && hint.length <= MAX_TITLE_HINT_LENGTH ? `${key} · ${hint}` : key;
+}
+
+function claimTags(key: string, value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.length > 0 ? value.map(toText) : ["[]"];
+  }
+  if (typeof value === "string" && SCOPE_CLAIMS.has(key)) {
+    const scopes = value.split(" ").filter(Boolean);
+    return scopes.length > 0 ? scopes : [value];
+  }
+  return [toText(value)];
+}
+
+function describeAlg(alg: string): string | undefined {
+  const match = /^(HS|RS|PS|ES)(\d{3})$/.exec(alg);
+  return match ? `${ALG_FAMILIES[match[1]]} · SHA-${match[2]}` : undefined;
+}
+
+function MetadataSection({ title, items, now }: { title: string; items: Items; now: number }) {
   return (
     <>
       <Detail.Metadata.Separator />
       <Detail.Metadata.Label title={title} text="" />
       {items.map((item) => {
-        const isTimestamp = typeof item.value === "number" && TIMESTAMP_CLAIMS.has(item.key);
+        const value: unknown = item.value;
 
-        if (isTimestamp) {
+        if (isTimestamp(item.key, value)) {
+          const color = getTimestampColor(item.key, value, now);
           return (
-            <Detail.Metadata.TagList key={item.key} title={item.key}>
-              <Detail.Metadata.TagList.Item text={String(item.value)} />
-              <Detail.Metadata.TagList.Item text={formatTimestamp(item.value as number)} color={Color.Green} />
+            <Detail.Metadata.TagList key={item.key} title={claimTitle(item.key)}>
+              <Detail.Metadata.TagList.Item text={String(value)} />
+              <Detail.Metadata.TagList.Item text={formatTimestamp(value)} color={color} />
+              <Detail.Metadata.TagList.Item text={formatRelative(value, now)} color={color} />
+            </Detail.Metadata.TagList>
+          );
+        }
+
+        if (item.key === "alg" && typeof value === "string") {
+          const unsigned = value.toLowerCase() === "none";
+          const description = unsigned ? "Unsigned" : describeAlg(value);
+          return (
+            <Detail.Metadata.TagList key={item.key} title={claimTitle(item.key)}>
+              <Detail.Metadata.TagList.Item text={value} color={unsigned ? Color.Red : undefined} />
+              {description && (
+                <Detail.Metadata.TagList.Item text={description} color={unsigned ? Color.Red : Color.Purple} />
+              )}
             </Detail.Metadata.TagList>
           );
         }
 
         return (
-          <Detail.Metadata.TagList key={item.key} title={item.key}>
-            <Detail.Metadata.TagList.Item text={String(item.value)} />
+          <Detail.Metadata.TagList key={item.key} title={claimTitle(item.key)}>
+            {claimTags(item.key, value).map((tag, index) => (
+              <Detail.Metadata.TagList.Item key={index} text={tag} />
+            ))}
           </Detail.Metadata.TagList>
         );
       })}
@@ -45,16 +94,22 @@ const JwtView = (props: LaunchProps<{ arguments: { token: string } }>) => {
   const [clipboardText, setClipboardText] = useState<string | undefined>();
   const [ready, setReady] = useState(false);
 
-  useEffect(() => {
+  const readClipboard = useCallback(() => {
     Clipboard.readText().then((text) => {
       setClipboardText(text);
       setReady(true);
     });
   }, []);
 
+  useEffect(readClipboard, [readClipboard]);
+
   const argToken = props.arguments.token?.trim();
   const raw = argToken || clipboardText?.trim() || "";
   const token = raw ? extractJwt(raw) : "";
+
+  const reloadAction = !argToken && (
+    <Action icon={Icon.ArrowClockwise} title="Reload from Clipboard" onAction={readClipboard} />
+  );
 
   if (!ready) {
     return <Detail isLoading={true} />;
@@ -64,6 +119,7 @@ const JwtView = (props: LaunchProps<{ arguments: { token: string } }>) => {
     return (
       <Detail
         markdown={`<img alt="JWT Logo" width="70" src="${jwtLogo}" />\n\n# Decode JWT\n\nCopy a JWT to your clipboard or pass a JWT token as argument.`}
+        actions={reloadAction ? <ActionPanel>{reloadAction}</ActionPanel> : undefined}
       />
     );
   }
@@ -73,6 +129,13 @@ const JwtView = (props: LaunchProps<{ arguments: { token: string } }>) => {
     const data = jose.decodeJwt(token);
     const headItems = ListFromObject(header);
     const dataItems = ListFromObject(data);
+    const now = Math.floor(Date.now() / 1000);
+    const status = getTokenStatus(data, now);
+    const signature = token.split(".")[2] ?? "";
+    const alg = typeof header.alg === "string" ? header.alg : "";
+    const canVerify = Boolean(alg) && alg.toLowerCase() !== "none" && Boolean(signature);
+    const timestampItems = dataItems.filter((item) => isTimestamp(item.key, item.value));
+    const lifetime = isTimestamp("exp", data.exp) && isTimestamp("iat", data.iat) ? data.exp - data.iat : undefined;
 
     const markdownContent = [
       `## HEADER: ALGORITHM & TOKEN TYPE`,
@@ -87,8 +150,18 @@ const JwtView = (props: LaunchProps<{ arguments: { token: string } }>) => {
 
     const metadata = (
       <Detail.Metadata>
-        <MetadataSection title="─── HEADER ───" items={headItems} />
-        <MetadataSection title="─── PAYLOAD ───" items={dataItems} />
+        {/* Raycast renders the first metadata row flush with the top edge; an empty label adds the spacing */}
+        <Detail.Metadata.Label title="" />
+        <Detail.Metadata.TagList title="Status">
+          <Detail.Metadata.TagList.Item text={status.label} color={status.color} />
+          {status.detail && <Detail.Metadata.TagList.Item text={status.detail} color={status.color} />}
+        </Detail.Metadata.TagList>
+        {lifetime !== undefined && lifetime > 0 && (
+          <Detail.Metadata.Label title="Lifetime" text={formatDuration(lifetime)} />
+        )}
+        <MetadataSection title="─── HEADER ───" items={headItems} now={now} />
+        <MetadataSection title="─── PAYLOAD ───" items={dataItems} now={now} />
+        <Detail.Metadata.Label title="" />
       </Detail.Metadata>
     );
 
@@ -101,15 +174,35 @@ const JwtView = (props: LaunchProps<{ arguments: { token: string } }>) => {
             <ActionPanel.Section>
               <Action.CopyToClipboard title="Copy PAYLOAD JSON" content={JSON.stringify(data, null, 2)} />
               <Action.CopyToClipboard title="Copy HEADER JSON" content={JSON.stringify(header, null, 2)} />
+              {canVerify && (
+                <Action.Push
+                  icon={Icon.Shield}
+                  title="Verify Signature"
+                  target={<VerifySignatureForm token={token} alg={alg} issuer={data.iss} />}
+                />
+              )}
+              {reloadAction}
+            </ActionPanel.Section>
+            <ActionPanel.Section title="TOKEN">
+              <Action.CopyToClipboard title="Copy Token" content={token} />
+              {signature && <Action.CopyToClipboard title="Copy Signature" content={signature} />}
             </ActionPanel.Section>
             <ActionPanel.Section title="PAYLOAD: DATA">
               {dataItems.map((item) => (
-                <Action.CopyToClipboard key={item.key} title={`Copy ${item.key} Value`} content={item.value} />
+                <Action.CopyToClipboard key={item.key} title={`Copy ${item.key} Value`} content={toText(item.value)} />
+              ))}
+              {timestampItems.map((item) => (
+                <Action.CopyToClipboard
+                  key={`${item.key}-iso`}
+                  icon={Icon.Clock}
+                  title={`Copy ${item.key} as ISO Date`}
+                  content={new Date((item.value as number) * 1000).toISOString()}
+                />
               ))}
             </ActionPanel.Section>
             <ActionPanel.Section title="HEADER: DATA">
               {headItems.map((item) => (
-                <Action.CopyToClipboard key={item.key} title={`Copy ${item.key} Value`} content={item.value} />
+                <Action.CopyToClipboard key={item.key} title={`Copy ${item.key} Value`} content={toText(item.value)} />
               ))}
             </ActionPanel.Section>
           </ActionPanel>
@@ -147,7 +240,10 @@ const JwtView = (props: LaunchProps<{ arguments: { token: string } }>) => {
         markdown={errorMarkdown}
         metadata={
           <Detail.Metadata>
-            <Detail.Metadata.Label title="Status" text="Invalid" />
+            <Detail.Metadata.Label title="" />
+            <Detail.Metadata.TagList title="Status">
+              <Detail.Metadata.TagList.Item text="Invalid" color={Color.Red} />
+            </Detail.Metadata.TagList>
             <Detail.Metadata.Separator />
             <Detail.Metadata.Label title="Token Length" text={`${token.length} chars`} />
             <Detail.Metadata.TagList title="Parts Detected">
@@ -156,12 +252,14 @@ const JwtView = (props: LaunchProps<{ arguments: { token: string } }>) => {
                 color={token.split(".").length === 3 ? Color.Orange : Color.Red}
               />
             </Detail.Metadata.TagList>
+            <Detail.Metadata.Label title="" />
           </Detail.Metadata>
         }
         actions={
           <ActionPanel>
             <Action.CopyToClipboard title="Copy Token" content={token} />
             <Action.CopyToClipboard title="Copy Error Message" content={errorMessage} />
+            {reloadAction}
           </ActionPanel>
         }
       />
