@@ -38,10 +38,12 @@ JWT Lens is not published in the Raycast Store, so you install it from source. Y
 3. Build the extension and add it to Raycast:
 
    ```bash
-   npm run dev
+   npm run build
    ```
 
-   Raycast opens with **Decode a JWT** available. Stop the command with `Ctrl+C` once it has started. The extension stays installed.
+   This writes a production build into Raycast's extensions folder. **Decode a JWT** is then available in Raycast.
+
+   If the command does not show up, run `npm run dev` once and stop it with `Ctrl+C` after it has started. That registers the extension with Raycast.
 
 To update, run `git pull`, then repeat steps 2 and 3.
 
